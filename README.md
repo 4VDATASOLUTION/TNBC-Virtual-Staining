@@ -1,154 +1,92 @@
-# TNBC - Triple-Negative Breast Cancer Analysis
+# Virtual Staining for PD-L1 Predictive Analysis (TNBC)
 
-CNN-based image analysis for tumor, immune, and stromal segmentation with PD-L1 quantification and CPS++ scoring.
+This repository hosts a deep learning pipeline designed to predict **PD-L1 expression** directly from **H&E histopathology images** via "Virtual Staining". 
 
-## 📁 Project Structure
+By predicting the PD-L1 stain (DAB channel) from H&E morphology, we enable **CPS++ scoring** without requiring expensive immunohistochemistry (IHC) staining for every slide.
+
+---
+
+## 🌟 Key Features
+
+*   **Virtual Staining CNN**: A custom **U-Net** with **ResNet50 Encoder** that translates H&E structure into PD-L1 protein expression maps.
+*   **Regression Approach**: Instead of simple classification, the model predicts continuous stain intensity (0.0 to 1.0) for every pixel.
+*   **Advanced Loss Function**: Uses **L1 + SSIM (Structural Similarity)** loss to ensure the predicted stain respects cell boundaries and tissue texture.
+*   **Tile-Level & Slide-Level Scoring**: Automatically aggregates predictions to calculate PD-L1 metrics.
+
+---
+
+## 🛠️ Installation
+
+```bash
+cd cnn_implementation
+pip install -r requirements_cnn.txt
+```
+
+---
+
+## 🚀 Usage Guide
+
+### 1. Data Preparation
+Match H&E tiles with their corresponding PD-L1 IHC tiles and perform color deconvolution to extract the Ground Truth (DAB channel).
+
+```bash
+python cnn_implementation/prepare_virtual_staining_data.py \
+    --he_dir path/to/he_images \
+    --pdl1_dir path/to/pdl1_images \
+    --output_dir training_data
+```
+
+### 2. Training
+Train the Virtual Staining U-Net. Logs are saved to `runs/` for TensorBoard.
+
+```bash
+python cnn_implementation/train_virtual_staining.py \
+    --data_dir training_data \
+    --epochs 50 \
+    --batch_size 16
+```
+
+### 3. Inference (Virtual Staining)
+Run the trained model on new H&E images to generate "virtual" PD-L1 heatmaps and score CSVs.
+
+```bash
+python cnn_implementation/inference_virtual_staining.py \
+    --model_path outputs/best_virtual_staining_loss.pth \
+    --input_dir data_raw/test_images \
+    --output_dir results
+```
+
+---
+
+## 📂 Repository Structure
 
 ```
 TNBC/
-├── cnn_implementation/          # Main CNN implementation (NEW)
-│   ├── models/                  # CNN model architectures
-│   │   ├── segmentation_cnn.py  # U-Net with ResNet backbone
-│   │   └── dataset.py           # Data loading & augmentation
-│   ├── train_segmentation.py    # Training script
-│   ├── inference_pipeline.py    # Inference & CPS++ scoring
-│   ├── prepare_dataset.py       # Data preparation utilities
-│   └── requirements_cnn.txt     # Python dependencies
+├── cnn_implementation/          # NEW: Virtual Staining Pipeline
+│   ├── prepare_virtual_staining_data.py  # Data matching & deconvolution
+│   ├── train_virtual_staining.py         # Main training script
+│   ├── inference_virtual_staining.py     # Inference & Visualization
+│   ├── models/
+│   │   ├── segmentation_cnn.py           # VirtualStainingCNN (U-Net) class
+│   │   └── virtual_staining_dataset.py   # Dataset class
 │
-├── PD-L1_Annotator/             # Annotation tool for pathologists
-│   └── annotation_tool.py       # Interactive labeling interface
-│
-├── PD-L1_predictor/             # Original PD-L1 predictor
-│   ├── predict_on_folder.py     # Inference script
-│   └── models/                  # Pre-trained models
-│
-├── data_raw/                    # Raw data and annotations
-│   ├── 02-008_HE_A12_v2_s13/           # H&E images
-│   ├── 02-008_PD1(NAT105)-CellMarque/  # PD-1 staining
-│   ├── 02-008_PDL1(SP142)-Springbio/   # PD-L1 staining
-│   └── *.csv, *.txt, *.xlsx            # Ground truth & results
-│
-├── legacy_scripts/              # Previous implementations
-│   ├── train_pd1_model.py       # Old PD-1 training script
-│   ├── merge_predictions*.py    # Prediction merging utilities
-│   └── generate_*.py            # Data generation scripts
-│
-├── docs/                        # Documentation
-│   ├── README_CNN.md            # Complete CNN guide
-│   └── Project Proposal SMRIST.pdf  # Original proposal
-│
-└── outputs/                     # Training outputs (created during training)
-    └── segmentation_YYYYMMDD_HHMMSS/
-        ├── best_model_iou.pth
-        ├── best_model_loss.pth
-        └── tensorboard/
+├── legacy_scripts/              # Old scripts (SegFormer, simple classification)
+├── PD-L1_Annotator/             # Manual annotation tool
+└── data_raw/                    # Input images (not tracked by git)
 ```
 
-## 🚀 Quick Start
+---
 
-### 1. Install Dependencies
+## 🧠 Model Architecture
 
-```powershell
-cd cnn_implementation
-python -m pip install -r requirements_cnn.txt
-```
+The model is an **Image-to-Image Translation** network:
+1.  **Input**: 512x512 RGB H&E Image.
+2.  **Encoder**: ResNet50 (ImageNet pretrained) extracts morphological features (e.g., nuclear irregularity, immune infiltration).
+3.  **Decoder**: U-Net decoder upsamples features to restore spatial resolution.
+4.  **Output**: Single-channel Sigmoid map representing PD-L1 stain probability.
 
-### 2. Prepare Data
+---
 
-Organize your data:
-```
-your_data/
-├── images/   # H&E histopathology images
-└── masks/    # Segmentation masks (0=bg, 1=tumor, 2=immune, 3=stroma)
-```
-
-### 3. Train Model
-
-```powershell
-python train_segmentation.py `
-    --data_dir ../your_data `
-    --output_dir ../outputs `
-    --epochs 50 `
-    --batch_size 4
-```
-
-### 4. Run Inference
-
-```powershell
-python inference_pipeline.py `
-    --image_folder ../test_images `
-    --model_path ../outputs/best_model_iou.pth `
-    --visualize
-```
-
-## 📖 Documentation
-
-- **[Complete CNN Guide](docs/README_CNN.md)** - Detailed implementation documentation
-- **[Project Proposal](docs/Project%20Proposal%20SMRIST.pdf)** - Original research proposal
-
-## 🏗️ CNN Architecture
-
-### Tasks (from Proposal)
-1. **Tissue Segmentation**: Tumor, immune, stroma classification
-2. **PD-L1 Quantification**: Expression levels per compartment
-3. **Feature Extraction**: CNN-derived features for CPS++ scoring
-
-### Model
-- **Architecture**: U-Net with ResNet50 backbone
-- **Input**: 512×512 RGB H&E images
-- **Output**: 4-class segmentation (background, tumor, immune, stroma)
-
-## 🔧 Tools Included
-
-### CNN Implementation (New)
-State-of-the-art segmentation with:
-- Advanced data augmentation
-- Dice + CrossEntropy loss
-- TensorBoard logging
-- Automatic checkpointing
-
-### Annotation Tool
-Interactive GUI for pathologists to label images
-
-### Virtual Staining Pipeline (Newest)
-Predicts PD-L1 expression heatmaps directly from H&E images using deep learning (CycleGAN/Regression U-Net concept).
-- **Structure-to-Stain Translation**: Infers protein expression from morphology.
-- **Metrics**: L1 Loss, SSIM, Pearson Correlation.
-- **Output**: continuous 0-1 probability maps for CPS++ scoring.
-
-### PD-L1 Predictor (Legacy)
-Pre-trained model for PD-L1 status prediction from H&E images
-
-## 📊 Expected Performance
-
-- **Mean IoU**: 0.75-0.85
-- **Tumor IoU**: 0.80-0.90
-- **Immune IoU**: 0.70-0.80
-- **Stroma IoU**: 0.65-0.75
-
-## 🔬 Research Context
-
-**Project**: CNN Image Classification for Triple-Negative Breast Cancer (SMRIST)
-
-**Purpose**: CNNs perform tumor, immune, and stromal segmentation and PD-L1 quantification from histopathology images, generating features for CPS++ scoring algorithm.
-
-## 📝 Citation
-
-```
-"CNN Image Classification for Triple-Negative Breast Cancer"
-Project Proposal SMRIST, 2026
-```
-
-## 🛠️ System Requirements
-
-- **Python**: 3.8+
-- **PyTorch**: 1.11.0+
-- **RAM**: 8GB+ (16GB recommended)
-- **GPU**: Optional (CUDA-compatible for faster training)
-
-## 📞 Getting Help
-
-See detailed guides:
-- Installation: `docs/README_CNN.md` (Setup section)
-- Training: `docs/README_CNN.md` (Training section)
-- Inference: `docs/README_CNN.md` (Inference section)
+## 📜 Legacy Modules
+*   **PD-L1 Predictor**: Old classification-based approach.
+*   **Annotation Tool**: Helper for manual pathologist annotations.
