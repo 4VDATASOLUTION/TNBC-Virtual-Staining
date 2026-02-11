@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Data
+data_raw/
+training_data/
+test_examples/
+outputs/
+!outputs/README.md
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# VS Code
+.vscode/
