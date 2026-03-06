@@ -1,26 +1,42 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.env
-.venv
-env/
-venv/
-ENV/
-env.bak/
-venv.bak/
+# ----- Sensitive / private docs -----
+prompt*.md
+kandus_method_PRD*.md
+kandus_method_prompt.txt
 
-# Data
+# ----- Generated outputs -----
+results/
+debug_output/
 data_raw/
-training_data/
-test_examples/
-outputs/
-!outputs/README.md
 
-# OS specific
+# ----- Python cache -----
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# ----- Model checkpoints (large binaries) -----
+kandus_method/checkpoints/
+*.pt
+*.pth
+*.ckpt
+
+# ----- Test / scratch scripts -----
+test_stain_color.py
+test_stain.py
+test_fixed.py
+
+# ----- Jupyter -----
+.ipynb_checkpoints/
+*.ipynb
+
+# ----- VS Code / editor -----
+.vscode/
+.idea/
+
+# ----- OS files -----
 .DS_Store
 Thumbs.db
-
-# VS Code
-.vscode/
