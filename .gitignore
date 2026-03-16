@@ -4,7 +4,6 @@ kandus_method_PRD*.md
 kandus_method_prompt.txt
 
 # ----- Generated outputs -----
-results/
 debug_output/
 data_raw/
 
