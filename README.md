@@ -50,7 +50,15 @@ TNBC/
 │       └── best_model_resnet101.pt   Trained CNN checkpoint (epoch 29, AUC=0.85)
 │
 ├── results/
-│   └── pipeline_results.json    Final results: 168 per-core + 1 patient summary
+│   ├── pipeline_results.json         Final results: 168 per-core + 1 patient summary
+│   ├── coords/
+│   │   └── {core_id}_cells.csv       Per-cell coordinates (TC, LC, ST) per core
+│   └── overlays/
+│       └── {core_id}_overlay.png     H&E image with colored cell position overlay
+│
+├── visualize_coords.py               Draw TC/LC/ST dot overlays on H&E images
+├── test_coords.py                    Smoke-test coordinate extraction on one core
+├── test_visualize.py                 Smoke-test overlay generation
 │
 └── docs/
     └── Project Proposal SMRIST.pdf
@@ -60,7 +68,7 @@ TNBC/
 
 ## Pipeline Architecture
 
-The pipeline runs in 4 sequential steps per core image:
+The pipeline runs in 5 sequential steps per core image:
 
 ```
 H&E image  ──► [Step 1] Tissue Segmentation ──────────────────────────────────┐
@@ -68,7 +76,10 @@ H&E image  ──► [Step 1] Tissue Segmentation ──────────
                      │                                                         │
                      ▼                                                         │
                tc_mask, lc_mask, st_mask                                      │
-               tc_count, lc_count                                              │
+               tc_count, lc_count                                             │
+               tc_coords, lc_coords, st_coords  ◄─ NEW: centroid extraction   │
+                     │                                                         │
+                     │ [Step 1b] Save per-cell CSV → results/coords/           │
                      │                                                         ▼
 PD-L1 image ──► [Step 2] DAB Stain Analysis ──► PDL1_percent ──► [Step 4] Scoring
                (color deconvolution)              TC_PDL1          ──► CPS
@@ -80,6 +91,9 @@ PD-1 image  ──► [Step 2.5] PD-1 Stain Analysis ─► TIL_density
 
 H&E image  ──► [Step 3] CNN (MIL ResNet101) ──► pdl1_prob_he (supplementary)
                (tiles → attention aggregation)
+
+                                    [Step 5] Save coords CSV per core
+               visualize_coords.py ──► results/overlays/{core_id}_overlay.png
 ```
 
 ---
@@ -117,6 +131,29 @@ lc_mask    : [H, W] bool  — lymphocyte region pixels
 st_mask    : [H, W] bool  — stroma region pixels
 tc_count   : int          — number of tumor nuclei detected
 lc_count   : int          — number of lymphocyte nuclei detected
+tc_coords  : list[dict]   — [{x, y, area_px, cell_type="TC"}, ...]
+lc_coords  : list[dict]   — [{x, y, area_px, cell_type="LC"}, ...]
+st_coords  : list[dict]   — [{x, y, cell_type="ST"}, ...] (grid-sampled)
+```
+
+### Step 1b: Coordinate Extraction (NEW)
+
+After compartment classification, `segment_tissue()` also extracts spatial coordinates for every detected cell:
+
+- **TC / LC centroids** — computed via `skimage.measure.regionprops` on the watershed label image. Each nucleus returns a `(row, col)` centroid converted to `(x, y)` at original resolution.
+- **Stroma grid sampling** — since stroma has no distinct nuclei, representative points are sampled from the stroma mask on a regular grid (`step=20` at downsampled resolution).
+- **Coordinate scaling** — all coordinates are multiplied by `1/scale` to map back from the 512px-wide processing resolution to the original image resolution (e.g., 2256×1440).
+
+`run_pipeline.py` saves these to a per-core CSV after every core:
+```
+results/coords/{core_id}_cells.csv
+```
+Format:
+```
+x,y,area_px,cell_type
+312,445,280,TC
+198,302,85,LC
+560,190,,ST
 ```
 
 ---
@@ -346,6 +383,7 @@ python -m kandus_method.run_pipeline `
     --checkpoint ./kandus_method/checkpoints/best_model_resnet101.pt `
     --output ./results/pipeline_results.json
 ```
+This automatically saves per-core coordinate CSVs to `results/coords/`.
 
 ### Single core:
 ```powershell
@@ -354,6 +392,22 @@ python -m kandus_method.run_pipeline `
     --pdl1_img "./data_raw/02-008_PDL1(SP142)-Springbio_A12_v3_b3/02-008_PDL1(SP142)-Springbio_A12_v3_b3_001_r1c1.jpg.jpeg" `
     --he_img   "./data_raw/02-008_HE_A12_v2_s13/02-008_HE_A12_v2_s13_001_r1c1.jpg.jpeg" `
     --checkpoint ./kandus_method/checkpoints/best_model_resnet101.pt
+```
+
+### Visualize cell coordinates as overlay:
+```powershell
+# Single core — draws TC/LC/ST dots on the H&E image
+python visualize_coords.py 005_r1c5
+# → saves results/overlays/005_r1c5_overlay.png
+
+# All cores with existing CSVs
+python visualize_coords.py all
+```
+
+### Smoke-test coordinate extraction:
+```powershell
+python test_coords.py       # verifies TC/LC/ST coords are extracted correctly
+python test_visualize.py    # verifies overlay generation on a single core
 ```
 
 ### Train the CNN:
@@ -365,6 +419,23 @@ python -m kandus_method.train_data_raw `
     --epochs   30 `
     --output   ./kandus_method/checkpoints
 ```
+
+---
+
+## Visualization Tool (`visualize_coords.py`)
+
+Draws colored dot overlays of detected cell positions on the original H&E image.
+
+| Cell type | Color | Dot size | Alpha |
+|-----------|-------|----------|-------|
+| TC — Tumor cells | Red | 6 px radius | 90% |
+| LC — Lymphocytes | Green | 4 px radius | 90% |
+| ST — Stroma sample pts | Blue/brown | 2 px radius | 45% |
+
+- Reads from `results/coords/{core_id}_cells.csv`
+- Finds matching H&E image automatically from `data_raw/`
+- Adds a semi-transparent legend with counts in top-left corner
+- Saves to `results/overlays/{core_id}_overlay.png`
 
 ---
 
